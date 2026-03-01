@@ -76,15 +76,22 @@ X_train, X_val, X_test, y_train, y_val, y_test, scaler = load_and_preprocess(
 
 ### 4. Train models
 
+Each variant is identified by name. The heavy model is the unoptimised baseline; smaller variants are progressively optimised.
+
 ```bash
-python src/train.py --hidden_units 128 --num_layers 2 --epochs 20
-python src/train.py --hidden_units 32  --num_layers 1 --epochs 20
+python src/train.py --variant heavy   --epochs 20   # baseline (128 units, 2 layers)
+python src/train.py --variant medium  --epochs 20
+python src/train.py --variant light   --epochs 20
+python src/train.py --variant tiny    --epochs 20
 ```
+
+Trained weights are saved to **`models/lstm_<variant>.pt`** (e.g. `models/lstm_heavy.pt`).
+These files are excluded from git — see [`models/README.md`](models/README.md) for the full naming table and a code snippet to reload a saved model.
 
 ### 5. Evaluate
 
 ```bash
-python src/evaluate.py --model_path models/lstm_h128_l2.pt
+python src/evaluate.py --model_path models/lstm_heavy.pt --variant heavy
 ```
 
 ### 6. Notebooks
