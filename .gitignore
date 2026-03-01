@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data files (download separately from Kaggle)
+data/raw/*.csv
+data/raw/*.zip
+data/processed/*.csv
+data/processed/*.npy
+data/processed/*.pkl
+
+# Model checkpoints and saved weights
+models/*.pt
+models/*.pth
+models/*.h5
+models/*.keras
+
+# Results / outputs
+results/*.png
+results/*.pdf
+results/*.json
+results/*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+kaggle.json
