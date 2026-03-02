@@ -6,9 +6,10 @@ Training script for the LSTM retail sales forecasting models.
 Usage (command line)
 --------------------
     python src/train.py --variant heavy   --epochs 20 --batch_size 256
-    python src/train.py --variant medium  --epochs 20
-    python src/train.py --variant light   --epochs 20
-    python src/train.py --variant tiny    --epochs 20
+
+Data
+----
+    Expects ``train.csv`` in ``data/raw/`` (must contain a ``sales`` column).
 
 Saved artefacts
 ---------------
@@ -81,12 +82,18 @@ def train(
     # Data
     # ------------------------------------------------------------------
     print("Loading and preprocessing data …")
+    t_data = time.time()
     X_train, X_val, X_test, y_train, y_val, y_test, _ = load_and_preprocess(
         csv_path=csv_path,
         window_size=window_size,
         val_frac=val_frac,
         test_frac=test_frac,
     )
+    print(f"  Data loaded in {time.time() - t_data:.1f}s")
+    print(f"  Train samples : {len(X_train):,}")
+    print(f"  Val   samples : {len(X_val):,}")
+    print(f"  Test  samples : {len(X_test):,}")
+    print(f"  Window size   : {window_size}")
 
     def to_tensors(X, y):
         return TensorDataset(
@@ -96,6 +103,8 @@ def train(
 
     train_loader = DataLoader(to_tensors(X_train, y_train), batch_size=batch_size, shuffle=True)
     val_loader   = DataLoader(to_tensors(X_val,   y_val),   batch_size=batch_size)
+    print(f"  Train batches : {len(train_loader):,}  (batch_size={batch_size})")
+    print(f"  Val   batches : {len(val_loader):,}")
 
     # ------------------------------------------------------------------
     # Model
@@ -109,11 +118,19 @@ def train(
     # ------------------------------------------------------------------
     # Training loop
     # ------------------------------------------------------------------
+    print(f"\n{'='*60}")
+    print(f"  Starting training: {epochs} epochs, lr={lr}")
+    print(f"{'='*60}")
+    total_start = time.time()
     history = []
+    best_val_mse = float("inf")
+
     for epoch in range(1, epochs + 1):
+        epoch_start = time.time()
         model.train()
         train_losses = []
-        for X_batch, y_batch in train_loader:
+        n_batches = len(train_loader)
+        for batch_idx, (X_batch, y_batch) in enumerate(train_loader, 1):
             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
             optimizer.zero_grad()
             pred = model(X_batch)
@@ -121,6 +138,12 @@ def train(
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
+
+            # Print progress every 25% of batches
+            if batch_idx % max(1, n_batches // 4) == 0 or batch_idx == n_batches:
+                print(f"  Epoch {epoch:3d}/{epochs}  "
+                      f"batch {batch_idx:>5d}/{n_batches}  "
+                      f"batch_loss={loss.item():.6f}", end="\r")
 
         # Validation
         model.eval()
@@ -133,8 +156,26 @@ def train(
 
         train_mse = float(np.mean(train_losses))
         val_mse   = float(np.mean(val_losses))
+        epoch_time = time.time() - epoch_start
+        elapsed    = time.time() - total_start
+        eta        = elapsed / epoch * (epochs - epoch)
+
+        improved = val_mse < best_val_mse
+        if improved:
+            best_val_mse = val_mse
+
         history.append({"epoch": epoch, "train_mse": train_mse, "val_mse": val_mse})
-        print(f"Epoch {epoch:3d}/{epochs}  train_mse={train_mse:.6f}  val_mse={val_mse:.6f}")
+        print(f"  Epoch {epoch:3d}/{epochs}  "
+              f"train_mse={train_mse:.6f}  val_mse={val_mse:.6f}  "
+              f"({epoch_time:.1f}s) "
+              f"{'↓ best' if improved else ''}")
+
+    total_time = time.time() - total_start
+    print(f"{'='*60}")
+    print(f"  Training complete in {total_time:.1f}s  "
+          f"({total_time/60:.1f} min)")
+    print(f"  Best val MSE: {best_val_mse:.6f}")
+    print(f"{'='*60}\n")
 
     # ------------------------------------------------------------------
     # Save artefacts
@@ -157,17 +198,17 @@ def train(
 
 def _parse_args():
     p = argparse.ArgumentParser(description="Train an LSTM forecasting model.")
-    p.add_argument("--csv_path",    default=DEFAULTS["csv_path"])
-    p.add_argument("--variant",     default=DEFAULTS["variant"],
-                   choices=["heavy", "medium", "light", "tiny"])
-    p.add_argument("--window_size", type=int,   default=DEFAULTS["window_size"])
-    p.add_argument("--epochs",      type=int,   default=DEFAULTS["epochs"])
-    p.add_argument("--batch_size",  type=int,   default=DEFAULTS["batch_size"])
-    p.add_argument("--lr",          type=float, default=DEFAULTS["lr"])
-    p.add_argument("--val_frac",    type=float, default=DEFAULTS["val_frac"])
-    p.add_argument("--test_frac",   type=float, default=DEFAULTS["test_frac"])
-    p.add_argument("--models_dir",  default=DEFAULTS["models_dir"])
-    p.add_argument("--results_dir", default=DEFAULTS["results_dir"])
+    p.add_argument("--csv_path", default=DEFAULTS["csv_path"])
+    p.add_argument("--variant",        default=DEFAULTS["variant"],
+                   choices=["heavy"])
+    p.add_argument("--window_size",    type=int,   default=DEFAULTS["window_size"])
+    p.add_argument("--epochs",         type=int,   default=DEFAULTS["epochs"])
+    p.add_argument("--batch_size",     type=int,   default=DEFAULTS["batch_size"])
+    p.add_argument("--lr",             type=float, default=DEFAULTS["lr"])
+    p.add_argument("--val_frac",       type=float, default=DEFAULTS["val_frac"])
+    p.add_argument("--test_frac",      type=float, default=DEFAULTS["test_frac"])
+    p.add_argument("--models_dir",     default=DEFAULTS["models_dir"])
+    p.add_argument("--results_dir",    default=DEFAULTS["results_dir"])
     return p.parse_args()
 
 

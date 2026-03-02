@@ -159,7 +159,7 @@ def evaluate_model(
 
 
 def compare_all_variants(
-    variants=("heavy", "medium", "light", "tiny"),
+    variants=("heavy",),
     models_dir: str = "models",
     results_dir: str = "results",
     **kwargs,
@@ -190,12 +190,12 @@ def _parse_args():
     p = argparse.ArgumentParser(description="Evaluate a saved LSTM model.")
     p.add_argument("--model_path",  required=True)
     p.add_argument("--variant",     required=True,
-                   choices=["heavy", "medium", "light", "tiny"])
-    p.add_argument("--csv_path",    default="data/raw/train.csv")
-    p.add_argument("--window_size", type=int,   default=30)
-    p.add_argument("--val_frac",    type=float, default=0.1)
-    p.add_argument("--test_frac",   type=float, default=0.1)
-    p.add_argument("--results_dir", default="results")
+                   choices=["heavy"])
+    p.add_argument("--csv_path", default="data/raw/train.csv")
+    p.add_argument("--window_size",    type=int,   default=30)
+    p.add_argument("--val_frac",       type=float, default=0.1)
+    p.add_argument("--test_frac",      type=float, default=0.1)
+    p.add_argument("--results_dir",    default="results")
     return p.parse_args()
 
 

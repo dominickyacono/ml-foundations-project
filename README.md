@@ -62,7 +62,7 @@ pip install -r requirements.txt
 
 ### 2. Download data
 
-Download `train.csv` from the Kaggle competition and place it at `data/raw/train.csv`.
+Download `train.csv` and `test.csv` from the Kaggle competition and place them at `data/raw/train.csv` and `data/raw/test.csv`.
 
 ### 3. Preprocess data
 
@@ -70,7 +70,8 @@ Download `train.csv` from the Kaggle competition and place it at `data/raw/train
 from src.data_preprocessing import load_and_preprocess
 
 X_train, X_val, X_test, y_train, y_val, y_test, scaler = load_and_preprocess(
-    "data/raw/train.csv"
+    "data/raw/train.csv",
+    "data/raw/test.csv",
 )
 ```
 
@@ -80,9 +81,6 @@ Each variant is identified by name. The heavy model is the unoptimised baseline;
 
 ```bash
 python src/train.py --variant heavy   --epochs 20   # baseline (128 units, 2 layers)
-python src/train.py --variant medium  --epochs 20
-python src/train.py --variant light   --epochs 20
-python src/train.py --variant tiny    --epochs 20
 ```
 
 Trained weights are saved to **`models/lstm_<variant>.pt`** (e.g. `models/lstm_heavy.pt`).
@@ -109,9 +107,7 @@ jupyter notebook notebooks/
 | Stage | Description |
 |-------|-------------|
 | **Baseline** | Heavy LSTM (128 hidden units, 2 layers) – establishes accuracy ceiling |
-| **Lightweight variants** | Progressively smaller hidden sizes (64 → 32 → 16) |
 | **Linear regression** | Simple statistical baseline for efficiency comparison |
-| **Quantization (extension)** | INT8 weight quantization experiment |
 
 ---
 

@@ -12,10 +12,7 @@ Example
 -------
     from src.model import build_model
 
-    heavy  = build_model("heavy")    # 128 units, 2 layers
-    medium = build_model("medium")   #  64 units, 2 layers
-    light  = build_model("light")    #  32 units, 1 layer
-    tiny   = build_model("tiny")     #  16 units, 1 layer
+    heavy = build_model("heavy")    # 128 units, 2 layers
 """
 
 import torch
@@ -85,9 +82,6 @@ class LSTMForecaster(nn.Module):
 
 _CONFIGS = {
     "heavy":  dict(hidden_size=128, num_layers=2, dropout=0.2),
-    "medium": dict(hidden_size=64,  num_layers=2, dropout=0.2),
-    "light":  dict(hidden_size=32,  num_layers=1, dropout=0.0),
-    "tiny":   dict(hidden_size=16,  num_layers=1, dropout=0.0),
 }
 
 
@@ -97,7 +91,7 @@ def build_model(variant: str = "heavy", input_size: int = 1) -> LSTMForecaster:
     Parameters
     ----------
     variant : str
-        One of ``"heavy"``, ``"medium"``, ``"light"``, ``"tiny"``.
+        One of ``"heavy"``.
     input_size : int
         Number of input features per time step.
 
