@@ -70,26 +70,42 @@ Download `train.csv` and `test.csv` from the Kaggle competition and place them a
 from src.data_preprocessing import load_and_preprocess
 
 X_train, X_val, X_test, y_train, y_val, y_test, scaler = load_and_preprocess(
-    "data/raw/train.csv",
-    "data/raw/test.csv",
+    csv_path="data/raw/train.csv",
+    window_size=30,
+    val_frac=0.1,
+    test_frac=0.2,
+    feature_set="paper",
+    split_strategy="global_temporal_80_20",
 )
 ```
 
 ### 4. Train models
 
-Each variant is identified by name. The heavy model is the unoptimised baseline; smaller variants are progressively optimised.
+Current replication variants are:
+
+- `lstm128` (full-capacity reference)
+- `lstm64`
+- `lstm48`
+- `lstm32`
+- `lstm16`
+
+All variants use the same single-layer architecture and differ only in hidden unit count.
 
 ```bash
-python src/train.py --variant heavy   --epochs 20   # baseline (128 units, 2 layers)
+python src/train.py --variant lstm128 --epochs 30 --batch_size 64 --loss_name mae --feature_set paper --split_strategy global_temporal_80_20
+python src/train.py --variant lstm64
+python src/train.py --variant lstm48
+python src/train.py --variant lstm32
+python src/train.py --variant lstm16
 ```
 
-Trained weights are saved to **`models/lstm_<variant>.pt`** (e.g. `models/lstm_heavy.pt`).
+Trained weights are saved to **`models/lstm_<variant>.pt`**. For these variant names, that becomes files such as `models/lstm_lstm64.pt` and `models/lstm_lstm128.pt`.
 These files are excluded from git — see [`models/README.md`](models/README.md) for the full naming table and a code snippet to reload a saved model.
 
 ### 5. Evaluate
 
 ```bash
-python src/evaluate.py --model_path models/lstm_heavy.pt --variant heavy
+python src/evaluate.py --model_path models/lstm_lstm64.pt --variant lstm64 --feature_set paper --split_strategy global_temporal_80_20
 ```
 
 ### 6. Notebooks
@@ -106,7 +122,7 @@ jupyter notebook notebooks/
 
 | Stage | Description |
 |-------|-------------|
-| **Baseline** | Heavy LSTM (128 hidden units, 2 layers) – establishes accuracy ceiling |
+| **LSTM compression sweep** | Single-layer LSTM family (`lstm128`, `lstm64`, `lstm48`, `lstm32`, `lstm16`) with shared architecture and compressed hidden sizes |
 | **Linear regression** | Simple statistical baseline for efficiency comparison |
 
 ---

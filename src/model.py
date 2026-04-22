@@ -1,60 +1,43 @@
-"""
-model.py
---------
-LSTM model definitions for retail sales forecasting.
+"""LSTM model definitions for retail sales forecasting.
 
-Two classes are provided:
-
-* ``LSTMForecaster`` – configurable LSTM (used for all experiments).
-* ``build_model``    – convenience factory that creates named model variants.
-
-Example
--------
-    from src.model import build_model
-
-    heavy = build_model("heavy")    # 128 units, 2 layers
+This module provides the architecture family used in the replication study:
+single-layer LSTMs with hidden-size compression from 128 to 16 units.
 """
 
 import torch
 import torch.nn as nn
 
 
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
-
 class LSTMForecaster(nn.Module):
-    """Single- or multi-layer LSTM followed by a fully-connected output layer.
+    """Single-layer LSTM followed by dropout and a Dense-16 bottleneck.
 
     Parameters
     ----------
-    input_size  : int   Number of features per time step (1 for univariate).
-    hidden_size : int   Number of hidden units per LSTM layer.
-    num_layers  : int   Number of stacked LSTM layers.
-    dropout     : float Dropout probability applied between LSTM layers
-                        (only active when ``num_layers > 1``).
+    input_size  : int   Number of features per time step (7 for this project).
+    hidden_size : int   Number of hidden units in the single LSTM layer.
+    dropout     : float Dropout probability applied after LSTM summary state.
+    dense_size  : int   Width of the bottleneck dense layer.
     """
 
     def __init__(
         self,
-        input_size: int = 1,
+        input_size: int = 7,
         hidden_size: int = 64,
-        num_layers: int = 1,
-        dropout: float = 0.0,
+        dropout: float = 0.2,
+        dense_size: int = 16,
     ):
         super().__init__()
         self.hidden_size = hidden_size
-        self.num_layers = num_layers
 
-        lstm_dropout = dropout if num_layers > 1 else 0.0
         self.lstm = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
-            num_layers=num_layers,
+            num_layers=1,
             batch_first=True,
-            dropout=lstm_dropout,
         )
-        self.fc = nn.Linear(hidden_size, 1)
+        self.dropout = nn.Dropout(dropout)
+        self.fc1 = nn.Linear(hidden_size, dense_size)
+        self.fc2 = nn.Linear(dense_size, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
@@ -68,30 +51,34 @@ class LSTMForecaster(nn.Module):
         torch.Tensor, shape (batch,)
         """
         out, _ = self.lstm(x)
-        last_hidden = out[:, -1, :]   # take output at final time step
-        return self.fc(last_hidden).squeeze(-1)
+        last_hidden = out[:, -1, :]  # sequence summary at final time step
+        z = self.dropout(last_hidden)
+        z = torch.relu(self.fc1(z))
+        return self.fc2(z).squeeze(-1)
 
     def count_parameters(self) -> int:
         """Return total number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-# ---------------------------------------------------------------------------
-# Named configurations
-# ---------------------------------------------------------------------------
-
 _CONFIGS = {
-    "heavy":  dict(hidden_size=128, num_layers=2, dropout=0.2),
+    "lstm128": dict(hidden_size=128, dropout=0.2, dense_size=16),
+    "lstm64": dict(hidden_size=64, dropout=0.2, dense_size=16),
+    "lstm48": dict(hidden_size=48, dropout=0.2, dense_size=16),
+    "lstm32": dict(hidden_size=32, dropout=0.2, dense_size=16),
+    "lstm16": dict(hidden_size=16, dropout=0.2, dense_size=16),
+    # Backward-compatible alias used by earlier notebooks/scripts.
+    "heavy": dict(hidden_size=128, dropout=0.2, dense_size=16),
 }
 
 
-def build_model(variant: str = "heavy", input_size: int = 1) -> LSTMForecaster:
+def build_model(variant: str = "lstm128", input_size: int = 7) -> LSTMForecaster:
     """Build a named LSTM variant.
 
     Parameters
     ----------
     variant : str
-        One of ``"heavy"``.
+        One of "lstm128", "lstm64", "lstm48", "lstm32", "lstm16".
     input_size : int
         Number of input features per time step.
 
@@ -105,3 +92,6 @@ def build_model(variant: str = "heavy", input_size: int = 1) -> LSTMForecaster:
         )
     cfg = _CONFIGS[variant]
     return LSTMForecaster(input_size=input_size, **cfg)
+
+
+VARIANT_NAMES = tuple(k for k in _CONFIGS.keys() if k != "heavy")

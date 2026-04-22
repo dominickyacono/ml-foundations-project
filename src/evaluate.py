@@ -1,24 +1,4 @@
-"""
-evaluate.py
------------
-Evaluation utilities: accuracy metrics, efficiency metrics, and inference
-latency measurement.
-
-Usage (command line)
---------------------
-    python src/evaluate.py --model_path models/lstm_heavy.pt --variant heavy
-
-Usage (notebook / script)
---------------------------
-    from src.evaluate import evaluate_model
-
-    report = evaluate_model(
-        model_path="models/lstm_heavy.pt",
-        variant="heavy",
-        csv_path="data/raw/train.csv",
-    )
-    print(report)
-"""
+"""Evaluation utilities for LSTM variants."""
 
 import argparse
 import os
@@ -29,15 +9,11 @@ import pandas as pd
 import torch
 
 from src.data_preprocessing import load_and_preprocess
-from src.model import build_model
+from src.model import VARIANT_NAMES, build_model
 
-
-# ---------------------------------------------------------------------------
-# Metric helpers
-# ---------------------------------------------------------------------------
 
 def mean_absolute_percentage_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """MAPE (%) – zero-sale days are excluded to avoid division by zero."""
+    """MAPE (%) with zero targets excluded to avoid division by zero."""
     mask = y_true != 0
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
 
@@ -46,23 +22,18 @@ def mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean((y_true - y_pred) ** 2))
 
 
+def root_mean_squared_error(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
 def model_file_size_kb(model_path: str) -> float:
-    """Return the size of a saved model file in kilobytes."""
     return os.path.getsize(model_path) / 1024
 
 
 def measure_inference_latency(model, X_sample: torch.Tensor, n_runs: int = 100) -> float:
-    """Return average inference time in milliseconds over ``n_runs`` runs.
-
-    Parameters
-    ----------
-    model    : LSTMForecaster (in eval mode, on CPU)
-    X_sample : torch.Tensor, shape (1, seq_len, 1)
-    n_runs   : int
-    """
+    """Return average inference time in milliseconds over n_runs runs."""
     model.eval()
     with torch.no_grad():
-        # Warm-up
         for _ in range(10):
             _ = model(X_sample)
 
@@ -71,12 +42,8 @@ def measure_inference_latency(model, X_sample: torch.Tensor, n_runs: int = 100) 
             _ = model(X_sample)
         elapsed = time.perf_counter() - start
 
-    return (elapsed / n_runs) * 1000  # ms
+    return (elapsed / n_runs) * 1000
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def evaluate_model(
     model_path: str,
@@ -84,40 +51,29 @@ def evaluate_model(
     csv_path: str = "data/raw/train.csv",
     window_size: int = 30,
     val_frac: float = 0.1,
-    test_frac: float = 0.1,
+    test_frac: float = 0.2,
+    split_strategy: str = "global_temporal_80_20",
     results_dir: str = "results",
+    feature_set: str = "paper",
 ) -> dict:
-    """Load a saved model, run inference on the test set, and report metrics.
-
-    Returns
-    -------
-    dict with keys:
-        variant, n_parameters, file_size_kb, mse, mape_pct, latency_ms
-    """
+    """Load a saved model, run inference on the test set, and report metrics."""
     os.makedirs(results_dir, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # Data
-    # ------------------------------------------------------------------
-    _, _, X_test, _, _, y_test, scaler = load_and_preprocess(
+    _, _, X_test, _, _, y_test, y_scaler = load_and_preprocess(
         csv_path=csv_path,
         window_size=window_size,
         val_frac=val_frac,
         test_frac=test_frac,
+        feature_set=feature_set,
+        split_strategy=split_strategy,
     )
 
-    # ------------------------------------------------------------------
-    # Model
-    # ------------------------------------------------------------------
-    model = build_model(variant=variant, input_size=1)
+    model = build_model(variant=variant, input_size=X_test.shape[-1])
     model.load_state_dict(torch.load(model_path, map_location="cpu"))
     model.eval()
 
     X_tensor = torch.tensor(X_test, dtype=torch.float32)
 
-    # ------------------------------------------------------------------
-    # Predictions (batched for memory efficiency)
-    # ------------------------------------------------------------------
     batch_size = 512
     preds = []
     with torch.no_grad():
@@ -126,40 +82,37 @@ def evaluate_model(
             preds.append(model(batch).numpy())
     y_pred_scaled = np.concatenate(preds)
 
-    # Inverse-transform to original sales scale
-    y_pred = scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
-    y_true = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+    y_pred = y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).flatten()
+    y_true = y_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
 
-    # ------------------------------------------------------------------
-    # Metrics
-    # ------------------------------------------------------------------
-    mse  = mean_squared_error(y_true, y_pred)
+    mse = mean_squared_error(y_true, y_pred)
+    rmse = root_mean_squared_error(y_true, y_pred)
     mape = mean_absolute_percentage_error(y_true, y_pred)
     latency = measure_inference_latency(model, X_tensor[:1])
     n_params = model.count_parameters()
-    file_kb  = model_file_size_kb(model_path)
+    file_kb = model_file_size_kb(model_path)
 
     report = {
-        "variant":       variant,
-        "n_parameters":  n_params,
-        "file_size_kb":  round(file_kb, 2),
-        "mse":           round(mse, 4),
-        "mape_pct":      round(mape, 4),
-        "latency_ms":    round(latency, 4),
+        "variant": variant,
+        "feature_set": feature_set,
+        "split_strategy": split_strategy,
+        "n_parameters": n_params,
+        "file_size_kb": round(file_kb, 2),
+        "mse": round(mse, 4),
+        "rmse": round(rmse, 4),
+        "mape_pct": round(mape, 4),
+        "latency_ms": round(latency, 4),
     }
 
-    # ------------------------------------------------------------------
-    # Save report
-    # ------------------------------------------------------------------
     report_path = os.path.join(results_dir, f"eval_{variant}.csv")
     pd.DataFrame([report]).to_csv(report_path, index=False)
-    print(f"Evaluation report saved → {report_path}")
+    print(f"Evaluation report saved -> {report_path}")
 
     return report
 
 
 def compare_all_variants(
-    variants=("heavy",),
+    variants=VARIANT_NAMES,
     models_dir: str = "models",
     results_dir: str = "results",
     **kwargs,
@@ -169,33 +122,29 @@ def compare_all_variants(
     for v in variants:
         model_path = os.path.join(models_dir, f"lstm_{v}.pt")
         if not os.path.isfile(model_path):
-            print(f"Skipping '{v}' – model file not found: {model_path}")
+            print(f"Skipping '{v}' - model file not found: {model_path}")
             continue
-        report = evaluate_model(model_path=model_path, variant=v,
-                                results_dir=results_dir, **kwargs)
+        report = evaluate_model(model_path=model_path, variant=v, results_dir=results_dir, **kwargs)
         rows.append(report)
 
     summary = pd.DataFrame(rows)
     summary_path = os.path.join(results_dir, "summary.csv")
     summary.to_csv(summary_path, index=False)
-    print(f"\nSummary table saved → {summary_path}")
+    print(f"\nSummary table saved -> {summary_path}")
     return summary
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
-
 def _parse_args():
     p = argparse.ArgumentParser(description="Evaluate a saved LSTM model.")
-    p.add_argument("--model_path",  required=True)
-    p.add_argument("--variant",     required=True,
-                   choices=["heavy"])
+    p.add_argument("--model_path", required=True)
+    p.add_argument("--variant", required=True, choices=list(VARIANT_NAMES) + ["heavy"])
     p.add_argument("--csv_path", default="data/raw/train.csv")
-    p.add_argument("--window_size",    type=int,   default=30)
-    p.add_argument("--val_frac",       type=float, default=0.1)
-    p.add_argument("--test_frac",      type=float, default=0.1)
-    p.add_argument("--results_dir",    default="results")
+    p.add_argument("--window_size", type=int, default=30)
+    p.add_argument("--val_frac", type=float, default=0.1)
+    p.add_argument("--test_frac", type=float, default=0.2)
+    p.add_argument("--split_strategy", choices=["per_group", "global_temporal_80_20"], default="global_temporal_80_20")
+    p.add_argument("--results_dir", default="results")
+    p.add_argument("--feature_set", choices=["paper", "baseline"], default="paper")
     return p.parse_args()
 
 
